@@ -8,3 +8,5 @@ tests/
 requirements-dev.txt
 Dockerfile
 render.yaml
+.env*
+.vercel

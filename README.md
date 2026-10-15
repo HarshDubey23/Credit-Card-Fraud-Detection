@@ -1,6 +1,6 @@
 # Credit-Card Fraud Detection: a leakage-safe evaluation
 
-[Results](results/RESULTS.md) · [Model card](docs/MODEL_CARD.md) · [Raw metrics](results/metrics.json)
+[Live API](https://fraud-scoring-api.vercel.app/docs) · [Results](results/RESULTS.md) · [Model card](docs/MODEL_CARD.md) · [Raw metrics](results/metrics.json)
 
 This project evaluates fraud classifiers the way a deployment would face them: trained on
 past transactions, with thresholds tuned on the next window, and scored on transactions that
@@ -89,8 +89,11 @@ curl -X POST localhost:8000/score -H 'content-type: application/json'      -d '{
 Input is validated: exactly 28 finite `V` values, `0 ≤ Amount ≤ 1,000,000`, and at most 1,000
 transactions per request. Invalid input returns 422 without echoing values. Measured on a laptop
 CPU (Intel i5-12450H, local uvicorn, 300 requests): one transaction p50 2.7 ms / p95 3.7 ms; a
-batch of 1,000 takes 32 ms. `Dockerfile` and `render.yaml` are included. **There is no public
-deployment yet**, so no live URL is claimed.
+batch of 1,000 takes 32 ms. **Live:** https://fraud-scoring-api.vercel.app (`/docs`, `/model`, `/score`), deployed on Vercel
+from this repository. The live `/model` reports the same model SHA-256 (`09774e02…`) as
+`model/model_card.json`. A round trip from India measured about 0.33 s median over 5 calls,
+mostly network and serverless start-up, not model time. `Dockerfile` and `render.yaml` are
+also included.
 
 ## Method
 
