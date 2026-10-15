@@ -1,31 +1,129 @@
-# Credit Card Fraud Detection
+# Credit-Card Fraud Detection: a leakage-safe evaluation
 
-This repository is an exploratory notebook built on the public Kaggle/ULB
-credit-card fraud dataset. It is retained as historical coursework and is not
-currently a production ML service.
+[Results](results/RESULTS.md) · [Model card](docs/MODEL_CARD.md) · [Raw metrics](results/metrics.json)
 
-## What Is Actually Here
+This project evaluates fraud classifiers the way a deployment would face them: trained on
+past transactions, with thresholds tuned on the next window, and scored on transactions that
+come later in time. Every number below is produced by `python -m fraud.run_experiments` and
+rendered into [`results/RESULTS.md`](results/RESULTS.md) by script. None are typed by hand.
 
-- One Google Colab/Jupyter notebook
-- A PDF report and presentation
-- No API, serialized model, CI pipeline, tests, or deployment configuration
+## Why rebuild it
 
-The current notebook uses Isolation Forest. It does not implement the
-XGBoost, SMOTE, ROC-AUC, model-serving, or drift-monitoring claims that may
-appear in older portfolio copy. No performance metric should be cited without
-re-running the notebook and recording the exact dataset split and output.
+The original version of this repo (kept in [`legacy/`](legacy/)) was a single Colab notebook
+with an Isolation Forest. It caught **44 of 136 frauds (recall 0.32)** on a random split and
+reported 99.75% *accuracy*, a number that is meaningless at a 0.17% fraud rate. An older
+copy of my portfolio site also showed XGBoost/SMOTE metrics that no code in this repo
+produced. They have been removed. This rebuild replaces both with a reproducible pipeline.
 
-## Run Locally
+## Main results
 
-Open `Credit_Card_Fraud_Detectio_googlecolab.ipynb` in Jupyter or Google Colab
-and provide the dataset through the notebook's documented input path.
+Test set = the last 20% of the two-day window (56,746 transactions, **74 frauds**). Model
+selection and thresholds use the validation window only.
 
-## Roadmap Before Portfolio Use
+![Model comparison](figures/model_comparison.png)
 
-1. Replace the notebook with a reproducible `src/` pipeline.
-2. Split before fitting preprocessing and resampling.
-3. Add tests, a pinned environment, evaluation JSON, model card, and data card.
-4. Add a FastAPI inference endpoint and a documented deployment.
+| Model | Test PR-AUC [95% CI] | Recall at val-chosen threshold | Precision |
+|---|---|---|---|
+| XGBoost (selected on validation) | **0.793** [0.702, 0.875] | 0.662 | 0.942 |
+| Hist. gradient boosting | 0.810 [0.721, 0.889] | 0.676 | 0.943 |
+| Logistic regression, class-weighted | 0.747 [0.637, 0.859] | 0.662 | 0.942 |
+| Isolation Forest (original approach) | 0.039 [0.030, 0.054] | 0.149 | 0.049 |
+| No-skill prior | 0.001 | — | — |
 
-Until those steps are complete, this project should not be presented as a
-production fraud-detection system.
+What the evidence supports:
+
+- **Supervised models beat the original unsupervised approach by a wide margin.** XGBoost −
+  Isolation Forest PR-AUC = +0.75 (paired bootstrap 95% CI +0.67 to +0.83). The Isolation
+  Forest's ROC-AUC is 0.94 even though its PR-AUC is 0.04, which is why ROC-AUC alone is a
+  poor headline metric for this problem.
+- **Gradient boosting is not clearly better than a class-weighted logistic regression.**
+  The difference is +0.040 PR-AUC, but the 95% CI (−0.017 to +0.114) includes zero. With
+  74 test frauds, the evaluation can't separate the top models.
+- **SMOTE didn't help gradient boosting** (XGBoost − XGBoost+SMOTE: +0.010, CI −0.017 to
+  +0.040). For logistic regression, SMOTE and class weighting give similar gains over the
+  unweighted model.
+- **A random split flatters the model.** XGBoost scores 0.849 ± 0.026 PR-AUC on stratified
+  random splits but 0.796 on the temporal split. Logistic regression barely moves (0.737
+  vs 0.747). A random split would have overstated the boosted model's advantage.
+- **Large frauds are the weak spot.** At the chosen threshold, the median missed fraud is
+  €12.31 while the median caught fraud is €1.10. Only 1 of 4 frauds of €500 or more was
+  caught. That's a small sample, but it's the right direction for future work, because missed
+  amount is what costs money.
+
+![Precision-recall curves](figures/pr_curves.png)
+
+### Choosing an operating point
+
+A fixed probability threshold isn't a business decision. `threshold_min_cost` picks the
+threshold on validation that minimises *missed fraud amount + review cost × alerts*. The
+review cost is an **assumption** (default €5 per manual review), so the
+[sensitivity table](results/RESULTS.md#review-cost-sensitivity-xgboost) shows how
+precision, recall and the share of fraud value caught move as it changes.
+
+![Cost sensitivity](figures/cost_sensitivity.png)
+
+### Calibration
+
+XGBoost's raw scores are already well calibrated on this data: Brier 0.00042, and isotonic
+recalibration fit on validation doesn't improve it (0.00044). Isotonic also turns scores into
+steps and lowers ranking quality (PR-AUC 0.793 → 0.748), so the deployed scores stay
+uncalibrated.
+
+## Method
+
+| Step | Choice | Why |
+|---|---|---|
+| Data integrity | SHA-256 checked against the public release. 1,081 exact duplicate rows dropped **before** splitting. | Duplicates across splits leak labels |
+| Split | Chronological 60/20/20 on `Time`. Stratified random splits run only as a robustness check. | A deployed model only sees future transactions |
+| Preprocessing | Scaling and SMOTE live **inside** the model pipeline, fit on train only. A unit test asserts this. | Prevents test-set leakage |
+| Model selection | Highest **validation** PR-AUC | Test set touched once |
+| Metrics | PR-AUC (primary), ROC-AUC, precision/recall at a validation-chosen threshold, Brier, ECE | Accuracy is uninformative at 0.17% prevalence |
+| Uncertainty | 1,000 stratified bootstrap resamples of the test set; paired differences; 5 training seeds | 74 test frauds means wide intervals |
+| Features | `V1`–`V28` (PCA components released by the data owner) and `Amount`. `Time` is used only for splitting. | Elapsed seconds since the first transaction doesn't generalise |
+
+## Reproduce
+
+```bash
+pip install -r requirements.txt
+# download creditcard.csv from https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
+PYTHONPATH=src python -m fraud.run_experiments --data path/to/creditcard.csv   # ~6 min on a laptop CPU
+PYTHONPATH=src python -m fraud.make_report
+PYTHONPATH=src pytest -q tests                                                 # synthetic data, no download
+```
+
+The run writes `results/metrics.json`, `results/RESULTS.md` and `figures/*.png`. Running it
+twice with the same seeds gives identical model metrics.
+
+## Limitations
+
+- **Two days of data, 473 frauds in total.** The test set holds 74 frauds, so intervals
+  are wide and small differences between models aren't meaningful.
+- **Anonymised features.** `V1`–`V28` are PCA components released by the data owner, so
+  there's no feature engineering or domain interpretation. The top features by gain (V14,
+  V10, V17) can't be explained in business terms.
+- **The cost model is stylised.** Real fraud operations have chargeback rules, partial
+  recoveries and customer-friction costs that aren't modelled here.
+- **No concept-drift study.** Two days is too short to measure how quickly the model
+  degrades over time.
+- **Hyperparameters are fixed, sensible defaults, not tuned.** Tuning on 57 validation frauds
+  would mostly fit noise.
+
+## Data
+
+Machine Learning Group, Université Libre de Bruxelles (ULB), distributed on Kaggle as
+"Credit Card Fraud Detection". The data isn't redistributed in this repository; see the
+dataset page for its licence. The release is associated with Dal Pozzolo, Caelen, Johnson
+and Bontempi, *Calibrating Probability with Undersampling for Unbalanced Classification*,
+IEEE Symposium Series on Computational Intelligence (SSCI), 2015.
+
+## Layout
+
+```
+src/fraud/data.py            load, validate, de-duplicate, temporal / stratified splits
+src/fraud/models.py          model zoo (prior, Isolation Forest, LR variants, HistGB, XGBoost variants)
+src/fraud/evaluate.py        metrics, threshold selection, bootstrap, calibration error
+src/fraud/run_experiments.py full protocol -> results/metrics.json + figures
+src/fraud/make_report.py     results/metrics.json -> results/RESULTS.md
+tests/                       19 tests on synthetic data (run in CI)
+legacy/                      the original notebook, report and slides
+```
