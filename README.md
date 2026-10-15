@@ -50,6 +50,12 @@ What the evidence supports:
   caught. That's a small sample, but it's the right direction for future work, because missed
   amount is what costs money.
 
+- **Over several time windows, boosting is steadier, not clearly stronger.** A rolling-origin
+  check inside the development period ([`results/rolling_origin.json`](results/rolling_origin.json);
+  3 out-of-time folds of 47–89 frauds each; the final test window is untouched) gives XGBoost
+  PR-AUC 0.748 ± 0.049 against 0.726 ± 0.141 for class-weighted logistic regression. XGBoost wins
+  2 of 3 folds. The linear model swings from 0.57 to 0.84 between windows.
+
 ![Precision-recall curves](figures/pr_curves.png)
 
 ### Choosing an operating point
@@ -105,6 +111,7 @@ pip install -r requirements.txt
 # download creditcard.csv from https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
 PYTHONPATH=src python -m fraud.run_experiments --data path/to/creditcard.csv   # ~6 min on a laptop CPU
 PYTHONPATH=src python -m fraud.make_report
+PYTHONPATH=src python -m fraud.rolling_origin --data path/to/creditcard.csv  # ~2 min
 PYTHONPATH=src pytest -q tests                                                 # synthetic data, no download
 ```
 
@@ -141,6 +148,7 @@ src/fraud/models.py          model zoo (prior, Isolation Forest, LR variants, Hi
 src/fraud/evaluate.py        metrics, threshold selection, bootstrap, calibration error
 src/fraud/run_experiments.py full protocol -> results/metrics.json + figures
 src/fraud/make_report.py     results/metrics.json -> results/RESULTS.md
+src/fraud/rolling_origin.py  out-of-time folds inside the development window
 src/fraud/export_model.py    refit + verify + export the served model
 src/fraud/serve.py           FastAPI scoring service
 model/                       exported model and model card
