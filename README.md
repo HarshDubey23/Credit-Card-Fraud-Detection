@@ -107,7 +107,7 @@ deployment yet**, so no live URL is claimed.
 ## Reproduce
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 # download creditcard.csv from https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
 PYTHONPATH=src python -m fraud.run_experiments --data path/to/creditcard.csv   # ~6 min on a laptop CPU
 PYTHONPATH=src python -m fraud.make_report

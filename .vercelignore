@@ -1,0 +1,10 @@
+legacy/
+figures/
+results/
+docs/
+tests/
+.github/
+*.md
+requirements-dev.txt
+Dockerfile
+render.yaml

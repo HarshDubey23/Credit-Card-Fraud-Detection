@@ -3,7 +3,7 @@ services:
     name: fraud-scoring-api
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements-serve.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn fraud.serve:app --app-dir src --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
