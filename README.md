@@ -69,6 +69,23 @@ recalibration fit on validation doesn't improve it (0.00044). Isotonic also turn
 steps and lowers ranking quality (PR-AUC 0.793 → 0.748), so the deployed scores stay
 uncalibrated.
 
+## Scoring API
+
+`python -m fraud.export_model --data creditcard.csv` refits the selected model and **refuses to
+write it unless its test PR-AUC equals the published value** (0.7929). That makes `model/model.json`
+provably the evaluated model. `model/model_card.json` records the threshold, test metrics and SHA-256 hashes.
+
+```bash
+uvicorn fraud.serve:app --app-dir src          # http://localhost:8000/docs
+curl -X POST localhost:8000/score -H 'content-type: application/json'      -d '{"transactions":[{"V":[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1],"Amount":12.5}]}'
+```
+
+Input is validated: exactly 28 finite `V` values, `0 ≤ Amount ≤ 1,000,000`, and at most 1,000
+transactions per request. Invalid input returns 422 without echoing values. Measured on a laptop
+CPU (Intel i5-12450H, local uvicorn, 300 requests): one transaction p50 2.7 ms / p95 3.7 ms; a
+batch of 1,000 takes 32 ms. `Dockerfile` and `render.yaml` are included. **There is no public
+deployment yet**, so no live URL is claimed.
+
 ## Method
 
 | Step | Choice | Why |
@@ -124,6 +141,9 @@ src/fraud/models.py          model zoo (prior, Isolation Forest, LR variants, Hi
 src/fraud/evaluate.py        metrics, threshold selection, bootstrap, calibration error
 src/fraud/run_experiments.py full protocol -> results/metrics.json + figures
 src/fraud/make_report.py     results/metrics.json -> results/RESULTS.md
-tests/                       19 tests on synthetic data (run in CI)
+src/fraud/export_model.py    refit + verify + export the served model
+src/fraud/serve.py           FastAPI scoring service
+model/                       exported model and model card
+tests/                       27 tests on synthetic data (run in CI)
 legacy/                      the original notebook, report and slides
 ```
